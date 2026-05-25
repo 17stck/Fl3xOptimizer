@@ -2,6 +2,18 @@
 # Fl3xOptimizer .gitignore
 # ===========================================================
 
+# Source code — DO NOT publish to the public repo.
+# The obfuscated binary is shipped via GitHub Releases instead.
+Fl3xOptimizer/
+App.xaml
+App.xaml.cs
+*.sln
+*.csproj
+
+# Claude Code / agent config (local-only project memory + rules)
+.claude/
+.github/copilot-instructions.md
+
 # Build outputs
 [Bb]in/
 [Oo]bj/
