@@ -88,6 +88,7 @@ Write-Step "Publishing Release $Runtime to staging..."
     /p:DebugSymbols=false `
     /p:WindowsPackageType=None `
     /p:WindowsAppSDKSelfContained=true `
+    /p:EnableMsixTooling=true `
     -o $stageDir `
     -v minimal `
     -nologo 2>&1 | Out-String | Write-Host
