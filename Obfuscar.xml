@@ -1,0 +1,86 @@
+<?xml version='1.0'?>
+<!--
+    Obfuscar config for Fl3xOptimizer (WinUI 3 / .NET 8).
+
+    What gets renamed:
+      - Every internal Service class method / field / property
+        (GpuTweakService.ApplyAmdAspmFbcOff → a.b())
+      - String literals encrypted (registry paths, command lines, etc.)
+      - Method bodies optimized to remove readable patterns
+
+    What is PROTECTED (skipped — must NOT be renamed):
+      - Anything under Fl3xOptimizer.Pages.*  → XAML resolves event
+        handlers by NAME at runtime via Connect(). Renaming breaks UI.
+      - App / MainWindow / DashboardPage / SettingsPage              (same reason)
+      - InitializeComponent / Connect / GetXamlType*                 (XAML codegen)
+      - Anonymous type members (compiler-required names)
+      - Types decorated with [Obfuscation(Exclude=true)]
+
+    Run via:  publish-protected.ps1
+-->
+<Obfuscator>
+  <!-- ===== I/O paths (placeholders — overridden by publish-protected.ps1) ===== -->
+  <Var name="InPath" value=".\publish-staging" />
+  <Var name="OutPath" value=".\publish-protected" />
+
+  <!-- ===== Renaming behavior ===== -->
+  <Var name="KeepPublicApi" value="false" />          <!-- we don't expose a public API -->
+  <Var name="HidePrivateApi" value="true" />          <!-- rename private members too -->
+  <Var name="RenameProperties" value="true" />
+  <Var name="RenameEvents" value="true" />
+  <Var name="RenameFields" value="true" />
+  <Var name="ReuseNames" value="true" />              <!-- same name across types -->
+  <Var name="UseUnicodeNames" value="false" />        <!-- ASCII only — safer on Win -->
+  <Var name="HideStrings" value="true" />             <!-- encrypt string literals -->
+  <Var name="OptimizeMethods" value="true" />         <!-- strip nop / unreachable -->
+  <Var name="SuppressIldasm" value="true" />          <!-- block `ildasm` tool -->
+  <Var name="RegenerateDebugInfo" value="false" />    <!-- no PDB needed -->
+
+  <!-- ============================================================
+       Target module = main assembly only (runtimes are MS libs)
+       ============================================================ -->
+  <Module file="$(InPath)\Fl3xOptimizer.dll">
+
+    <!-- ===== WinUI XAML reflection skip list ===== -->
+
+    <!-- Every Page-derived class is wired by XAML by name. -->
+    <SkipNamespace name="Fl3xOptimizer.Pages" />
+
+    <!-- App-level XAML targets -->
+    <SkipType name="Fl3xOptimizer.App" />
+    <SkipType name="Fl3xOptimizer.MainWindow" />
+    <SkipType name="Fl3xOptimizer.DashboardPage" />
+    <SkipType name="Fl3xOptimizer.SettingsPage" />
+
+    <!-- Anything ending in Page or Window (defense in depth) -->
+    <SkipType name="*Page" />
+    <SkipType name="*Window" />
+
+    <!-- XAML codegen methods — always preserve names across all types -->
+    <SkipMethod type="*" name="InitializeComponent" />
+    <SkipMethod type="*" name="Connect" />
+    <SkipMethod type="*" name="GetXamlType" />
+    <SkipMethod type="*" name="GetXamlTypeByFullName" />
+    <SkipMethod type="*" name="GetXmlnsDefinitions" />
+
+    <!-- Event handlers reachable from XAML strings — pattern-match common suffixes -->
+    <SkipMethod type="*Page" name="*_Click" />
+    <SkipMethod type="*Page" name="*_Toggled" />
+    <SkipMethod type="*Page" name="*_Loaded" />
+    <SkipMethod type="*Page" name="*_Tapped" />
+    <SkipMethod type="*Page" name="*_Checked" />
+    <SkipMethod type="*Page" name="*_Unchecked" />
+    <SkipMethod type="*Page" name="*_SelectionChanged" />
+    <SkipMethod type="*Page" name="*_TextChanged" />
+    <SkipMethod type="*Page" name="*_ValueChanged" />
+    <SkipMethod type="*Page" name="OnNavigatedTo" />
+    <SkipMethod type="*Page" name="OnNavigatedFrom" />
+
+    <!-- Same for MainWindow -->
+    <SkipMethod type="*Window" name="*_Click" />
+    <SkipMethod type="*Window" name="*_Toggled" />
+    <SkipMethod type="*Window" name="*_SelectionChanged" />
+    <SkipMethod type="*Window" name="*_Loaded" />
+
+  </Module>
+</Obfuscator>
