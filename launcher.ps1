@@ -32,6 +32,7 @@
 # GitHub repo coordinates
 $GitHubUser = '17stck'
 $GitHubRepo = 'Fl3xOptimizer'
+$ZipName    = 'Fl3xOptimizer.zip'   # Folder-layout zip (NOT single-file - WinUI 3 COM activation breaks in single-file)
 $ExeName    = 'Fl3xOptimizer.exe'
 
 # -----------------------------------------------------------------
@@ -47,7 +48,7 @@ $Uninstall   = ($args -contains '-Uninstall') -or ($MyInvocation.UnboundArgument
 # https://github.com/USER/REPO/releases/latest/download/FILE  resolves to the
 # newest release automatically - the launcher never needs updating when you
 # publish a new version.
-$ExeUrl = "https://github.com/$GitHubUser/$GitHubRepo/releases/latest/download/$ExeName"
+$ZipUrl = "https://github.com/$GitHubUser/$GitHubRepo/releases/latest/download/$ZipName"
 
 function Write-Stage($msg) { Write-Host ""; Write-Host "==> $msg" -ForegroundColor Cyan }
 function Die($msg) { Write-Host "ERROR: $msg" -ForegroundColor Red; exit 1 }
@@ -65,27 +66,27 @@ if ($Uninstall) {
 }
 
 # ---- Download / update path ---------------------------------------
-# Minimum sane size: the real exe is ~82 MB. Anything under 50 MB is a
-# partial download from an aborted run - re-download it.
-$MinSizeBytes = 50MB
-$cachedSize = if (Test-Path $ExePath) { (Get-Item $ExePath).Length } else { 0 }
-$tooSmall = ($cachedSize -gt 0) -and ($cachedSize -lt $MinSizeBytes)
-if ($tooSmall) {
-    Write-Host ("Cached file looks incomplete ({0:N1} MB < 50 MB). Re-downloading..." -f ($cachedSize / 1MB)) -ForegroundColor Yellow
+# Reinstall if anything is missing OR the cached exe is suspiciously small
+# (older 50MB single-file approach left some bad caches around).
+$needsInstall = $ForceUpdate -or (-not (Test-Path $ExePath))
+if (-not $needsInstall -and (Get-Item $ExePath).Length -lt 100KB) {
+    Write-Host "Cached exe looks corrupted. Reinstalling..." -ForegroundColor Yellow
+    $needsInstall = $true
 }
-$needsInstall = $ForceUpdate -or (-not (Test-Path $ExePath)) -or $tooSmall
 
 if ($needsInstall) {
     Write-Stage "Downloading $AppName latest release..."
-    Write-Host "  $ExeUrl"
+    Write-Host "  $ZipUrl"
 
-    # Kill any running instance first so we can overwrite the file
+    # Kill any running instance first so we can overwrite files
     Get-Process -Name $AppName -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Milliseconds 200
 
-    if (-not (Test-Path $InstallDir)) {
-        New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-    }
+    # Wipe old install (clean slate, no leftover broken files)
+    if (Test-Path $InstallDir) { Remove-Item $InstallDir -Recurse -Force -ErrorAction SilentlyContinue }
+    New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+
+    $tempZip = Join-Path $env:TEMP "Fl3xOptimizer-$(Get-Random).zip"
 
     try {
         # TLS 1.2 needed on older Windows 10 boxes
@@ -94,59 +95,52 @@ if ($needsInstall) {
 
         $downloadOk = $false
 
-        # Strategy 1: curl.exe (Windows 10 1803+, Windows 11). Has a real
-        # progress bar that does NOT slow the transfer down (unlike IWR).
+        # Strategy 1: curl.exe (Windows 10 1803+, Windows 11). Real progress
+        # bar that doesn't slow the transfer.
         $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
         if ($curl) {
-            Write-Host "  Using curl.exe (built-in, visible progress)..."
+            Write-Host "  Using curl.exe (visible progress)..."
             & $curl.Source -L --progress-bar --fail --retry 3 --retry-delay 2 `
                 -A 'Fl3xOptimizer-Launcher' `
-                -o $ExePath $ExeUrl
-            if ($LASTEXITCODE -eq 0 -and (Test-Path $ExePath) -and (Get-Item $ExePath).Length -gt $MinSizeBytes) {
+                -o $tempZip $ZipUrl
+            if ($LASTEXITCODE -eq 0 -and (Test-Path $tempZip) -and (Get-Item $tempZip).Length -gt 10MB) {
                 $downloadOk = $true
             } else {
                 Write-Host "  curl failed (exit $LASTEXITCODE), trying fallback..." -ForegroundColor Yellow
             }
         }
 
-        # Strategy 2: Start-BitsTransfer (built-in, Windows 7+). Native
-        # Windows download manager — fast, resumable, native progress UI.
-        if (-not $downloadOk -and (Get-Command Start-BitsTransfer -ErrorAction SilentlyContinue)) {
-            Write-Host "  Using BITS transfer..."
-            try {
-                Import-Module BitsTransfer -ErrorAction Stop
-                Start-BitsTransfer -Source $ExeUrl -Destination $ExePath -DisplayName 'Fl3xOptimizer' -Description 'Downloading release...'
-                if ((Test-Path $ExePath) -and (Get-Item $ExePath).Length -gt $MinSizeBytes) {
-                    $downloadOk = $true
-                }
-            } catch {
-                Write-Host "  BITS failed: $($_.Exception.Message)" -ForegroundColor Yellow
-            }
-        }
-
-        # Strategy 3: WebClient (no progress but reliable, last resort)
+        # Strategy 2: WebClient (silent but reliable)
         if (-not $downloadOk) {
             Write-Host "  Using WebClient fallback (no progress shown, please wait)..."
             $wc = New-Object System.Net.WebClient
             $wc.Headers.Add('User-Agent', 'Fl3xOptimizer-Launcher')
-            $wc.DownloadFile($ExeUrl, $ExePath)
+            $wc.DownloadFile($ZipUrl, $tempZip)
             $wc.Dispose()
-            $downloadOk = $true
         }
+
+        if (-not (Test-Path $tempZip) -or (Get-Item $tempZip).Length -lt 10MB) {
+            Die "Download did not produce a usable zip at $tempZip"
+        }
+
+        Write-Stage "Extracting to $InstallDir ..."
+        Expand-Archive -Path $tempZip -DestinationPath $InstallDir -Force
+        Remove-Item $tempZip -Force -ErrorAction SilentlyContinue
     } catch {
-        Die ("Download failed: " + $_.Exception.Message + "`nCheck that the release + exe exist at:`n  $ExeUrl")
+        Die ("Install failed: " + $_.Exception.Message + "`nCheck that the release zip exists at:`n  $ZipUrl")
     }
 
     if (-not (Test-Path $ExePath)) {
-        Die "Download succeeded but $ExePath not found."
+        Die "Extraction succeeded but $ExePath not found. The release zip may be malformed."
     }
 
-    # Unblock the file so SmartScreen doesn't prompt every launch
-    try { Unblock-File -Path $ExePath -ErrorAction SilentlyContinue } catch {}
+    # Unblock all downloaded files (zone identifier - prevents SmartScreen on every launch)
+    Get-ChildItem $InstallDir -Recurse | Unblock-File -ErrorAction SilentlyContinue
 
     Set-Content -Path $VersionFile -Value (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
     $exeSize = (Get-Item $ExePath).Length
-    Write-Host ("Installed ({0:N2} MB)." -f ($exeSize / 1MB)) -ForegroundColor Green
+    $folderSize = (Get-ChildItem $InstallDir -Recurse -File | Measure-Object -Property Length -Sum).Sum
+    Write-Host ("Installed: exe={0} KB, total={1:N1} MB at {2}" -f [int]($exeSize/1KB), ($folderSize/1MB), $InstallDir) -ForegroundColor Green
 }
 
 # ---- Launch -------------------------------------------------------
