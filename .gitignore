@@ -1,0 +1,73 @@
+# ===========================================================
+# Fl3xOptimizer .gitignore
+# ===========================================================
+
+# Build outputs
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+[Ll]og/
+[Ll]ogs/
+
+# Publish outputs (large - hundreds of MB)
+publish-staging/
+publish-protected/
+publish-singlefile/
+*-protected.zip
+*.zip
+
+# Visual Studio
+.vs/
+*.user
+*.userosscache
+*.sln.docstates
+*.suo
+*.vsidx
+
+# Rider / Resharper
+.idea/
+_ReSharper*/
+*.[Rr]e[Ss]harper
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# NuGet
+*.nupkg
+*.snupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+*.nuget.props
+*.nuget.targets
+
+# Test results
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+
+# Misc / OS
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+*.tmp
+*.bak
+*.swp
+*~
+
+# Debug / profiling
+*.pdb
+*.cache
+*.gpState
+*.dotCover
+
+# Coverage
+[Cc]overage*/
+*.coverage
+*.coveragexml
+
+# Obfuscar tooling (per-run outputs)
+Obfuscar.log
+Mapping.txt
+Mapping.xml
