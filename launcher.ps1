@@ -92,15 +92,47 @@ if ($needsInstall) {
         [System.Net.ServicePointManager]::SecurityProtocol =
             [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
-        # Use WebClient instead of Invoke-WebRequest.
-        # PowerShell 5.1's IWR uses the IE engine and renders a progress bar
-        # per byte, which drops download speed to ~5 KB/s on an 80 MB file.
-        # WebClient.DownloadFile streams at full bandwidth (10+ MB/s).
-        Write-Host "  (this will take ~10-60 seconds depending on your connection)"
-        $wc = New-Object System.Net.WebClient
-        $wc.Headers.Add('User-Agent', 'Fl3xOptimizer-Launcher')
-        $wc.DownloadFile($ExeUrl, $ExePath)
-        $wc.Dispose()
+        $downloadOk = $false
+
+        # Strategy 1: curl.exe (Windows 10 1803+, Windows 11). Has a real
+        # progress bar that does NOT slow the transfer down (unlike IWR).
+        $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
+        if ($curl) {
+            Write-Host "  Using curl.exe (built-in, visible progress)..."
+            & $curl.Source -L --progress-bar --fail --retry 3 --retry-delay 2 `
+                -A 'Fl3xOptimizer-Launcher' `
+                -o $ExePath $ExeUrl
+            if ($LASTEXITCODE -eq 0 -and (Test-Path $ExePath) -and (Get-Item $ExePath).Length -gt $MinSizeBytes) {
+                $downloadOk = $true
+            } else {
+                Write-Host "  curl failed (exit $LASTEXITCODE), trying fallback..." -ForegroundColor Yellow
+            }
+        }
+
+        # Strategy 2: Start-BitsTransfer (built-in, Windows 7+). Native
+        # Windows download manager — fast, resumable, native progress UI.
+        if (-not $downloadOk -and (Get-Command Start-BitsTransfer -ErrorAction SilentlyContinue)) {
+            Write-Host "  Using BITS transfer..."
+            try {
+                Import-Module BitsTransfer -ErrorAction Stop
+                Start-BitsTransfer -Source $ExeUrl -Destination $ExePath -DisplayName 'Fl3xOptimizer' -Description 'Downloading release...'
+                if ((Test-Path $ExePath) -and (Get-Item $ExePath).Length -gt $MinSizeBytes) {
+                    $downloadOk = $true
+                }
+            } catch {
+                Write-Host "  BITS failed: $($_.Exception.Message)" -ForegroundColor Yellow
+            }
+        }
+
+        # Strategy 3: WebClient (no progress but reliable, last resort)
+        if (-not $downloadOk) {
+            Write-Host "  Using WebClient fallback (no progress shown, please wait)..."
+            $wc = New-Object System.Net.WebClient
+            $wc.Headers.Add('User-Agent', 'Fl3xOptimizer-Launcher')
+            $wc.DownloadFile($ExeUrl, $ExePath)
+            $wc.Dispose()
+            $downloadOk = $true
+        }
     } catch {
         Die ("Download failed: " + $_.Exception.Message + "`nCheck that the release + exe exist at:`n  $ExeUrl")
     }
