@@ -84,8 +84,28 @@ if ($needsInstall) {
         [System.Net.ServicePointManager]::SecurityProtocol =
             [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
-        # Download directly to install path (single .exe - no extraction needed)
-        Invoke-WebRequest -Uri $ExeUrl -OutFile $ExePath -UseBasicParsing
+        # Use WebClient instead of Invoke-WebRequest:
+        # PowerShell 5.1's IWR uses the IE engine and renders a progress bar
+        # per byte, which drops download speed to ~5 KB/s on an 80 MB file.
+        # WebClient.DownloadFile streams at full bandwidth (10+ MB/s).
+        $wc = New-Object System.Net.WebClient
+        $wc.Headers.Add('User-Agent', 'Fl3xOptimizer-Launcher')
+
+        # Show simple percent progress without slowing the transfer
+        $lastReport = 0
+        Register-ObjectEvent -InputObject $wc -EventName DownloadProgressChanged -Action {
+            $pct = $Event.SourceEventArgs.ProgressPercentage
+            $script:lastReport = $pct
+            if ($pct % 10 -eq 0) {
+                $mb = [math]::Round($Event.SourceEventArgs.BytesReceived / 1MB, 1)
+                $tot = [math]::Round($Event.SourceEventArgs.TotalBytesToReceive / 1MB, 1)
+                Write-Host ("  {0,3}%  ({1} / {2} MB)" -f $pct, $mb, $tot)
+            }
+        } | Out-Null
+
+        $wc.DownloadFile($ExeUrl, $ExePath)
+        $wc.Dispose()
+        Get-EventSubscriber | Unregister-Event -Force -ErrorAction SilentlyContinue
     } catch {
         Die ("Download failed: " + $_.Exception.Message + "`nCheck that the release + exe exist at:`n  $ExeUrl")
     }
